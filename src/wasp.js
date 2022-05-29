@@ -1,9 +1,8 @@
 'use strict'
 
+const PandaCore = require('../')
 const PandaSingleton = require('./class/singleton')
 const PandaLogger = require('./logger')
-// const Factory = require('./factory')
-const ctx = require('./context')
 const Commander = require('commander')
 const { Command } = Commander
 const path = require('path')
@@ -174,7 +173,7 @@ class Wasp extends PandaSingleton {
   } */
 
   async locationTest (locRef, opts = {}) {
-    return await ctx.locationTest(locRef, opts)
+    return await PandaCore.ctx.locationTest(locRef, opts)
   }
 
   async confirmInProject (opts) { return await this.locationTest('inProject', opts) }

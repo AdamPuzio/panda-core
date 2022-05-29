@@ -157,7 +157,7 @@ const PandaContext = () => {
         Object.entries(val).forEach(([k, v]) => {
           const subSpacing = maxLength + 3 - k.length - spaces
           const subSpacer = ' '.repeat(subSpacing + 2 > 0 ? subSpacing + 2 : 0)
-          if (Array.isArray(v)) v = JSON.stringify(v)
+          if (util._.isObject(v)) v = chalk.green(JSON.stringify(v))
           console.log(`    ${key(k)} ${subSpacer}${v}`)
         })
       } else {

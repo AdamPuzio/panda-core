@@ -1,7 +1,8 @@
 'use strict'
 
+const PandaCore = require('../')
 const PandaSingleton = require('./class/singleton')
-const ctx = require('./context')
+const ctx = PandaCore.ctx
 const path = require('path')
 const fs = require('fs-extra')
 const CacheBase = require('cache-base')
@@ -121,11 +122,11 @@ class PandaFactory extends PandaSingleton {
    * @param {Object} data
    */
   async buildPackageJson (projectDir, data) {
-    const pandaVersion = await this.latestPackage()
     const pandaCfg = {}
 
+    const base = await this.generateBasePackage()
     const pkgPath = path.join(projectDir, 'package.json')
-    const pkg = {
+    const pkg = {...{
       name: data.slug,
       version: '1.0.0',
       description: '',
@@ -137,15 +138,13 @@ class PandaFactory extends PandaSingleton {
       keywords: [],
       author: '',
       license: '',
-      dependencies: {
-        panda: `^${pandaVersion}`
-      },
+      dependencies: {},
       devDependencies: {},
       engines: {
         node: '>= 14.0.0'
       }
-    }
-    // const privateLabel = this.privateLabel
+    }, ...base}
+
     if (data.testTool) pkg.scripts.test = data.testTool
     if (data.lintTool) pkg.scripts.lint = data.lintTool
     if (data.cssTool) pkg.scripts.compileCss = data.cssTool
@@ -154,6 +153,16 @@ class PandaFactory extends PandaSingleton {
     await fs.outputJSON(pkgPath, pkg, { spaces: 2 })
 
     await this.npmInstall(projectDir, data)
+  }
+
+  async generateBasePackage () {
+    const pandaVersion = await this.latestPackage()
+    const pl = ctx.labelInfo
+    let base = { dependencies: {} }
+    if (pl.name === 'panda') base.dependencies.panda = `^${pandaVersion}`
+    else base.dependencies[pl.name] = `^${pl.version}`
+    if (pl.panda && pl.panda.projectBase) base = pl.panda.projectBase
+    return base
   }
 
   /**

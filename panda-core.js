@@ -1,19 +1,11 @@
 'use strict'
 
-const ctx = require('./src/context')
-
 let Logger
 
 class PandaCore {
   constructor () {
     this.initialized = true
   }
-
-  ctx = ctx
-
-  // private label information
-  label = 'panda'
-  labelData = {}
 
   class = {
     Singleton: require('./src/class/singleton')
@@ -28,6 +20,8 @@ class PandaCore {
   entity (entity) {
     return require(`./src/entity/${entity}`)
   }
+
+  get ctx () { return require('./src/context') }
 
   get Factory () { return require('./src/factory') }
 

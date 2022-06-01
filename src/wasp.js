@@ -173,6 +173,7 @@ class Wasp extends PandaSingleton {
   } */
 
   async locationTest (locRef, opts = {}) {
+    opts = {...{ onFail: 'exit' }, ...opts}
     return await PandaCore.ctx.locationTest(locRef, opts)
   }
 

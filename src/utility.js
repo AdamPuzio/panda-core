@@ -2,6 +2,8 @@
 
 const _ = require('lodash')
 const glob = require('util').promisify(require('glob'))
+const { v4: uuidv4 } = require('uuid')
+const moment = require('moment')
 
 module.exports = {
   _,
@@ -19,6 +21,15 @@ module.exports = {
     return target
   },
 
+  now: async function (dateFormat) { return moment().format(dateFormat) },
+
+  openBrowser (url) {
+    require('child_process')
+      .exec((process.platform
+        .replace('darwin','')
+        .replace(/win32|linux/,'xdg-') + 'open ' + url))
+  },
+
   pick (obj, keys, prune = true) {
     // array means keys stay the same
     if (Array.isArray(keys)) {
@@ -31,6 +42,8 @@ module.exports = {
       return Object.prototype.hasOwnProperty.call(obj, key) || !prune ? { [keys[key]]: obj[key] } : {}
     }))
   },
+
+  uid: function () { return uuidv4() },
 
   slugify (v) { return _.kebabCase(v) }, // becomes-this
   nameify (v) { return _.startCase(v) }, // Becomes This

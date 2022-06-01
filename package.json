@@ -1,5 +1,5 @@
 {
-  "name": "@panda/panda-core",
+  "name": "panda-core",
   "version": "0.0.1",
   "description": "Panda Framework Core",
   "main": "panda-core.js",

@@ -169,10 +169,6 @@ const PandaContext = () => {
     console.log()
     valFn('cwd', 0)
     valFn('context', 0)
-    console.log()
-    console.log(title('Private Label:'))
-    valFn('label')
-    valFn('labelInfo')
     const lists = {
       Location: (k) => { return k.startsWith('in') },
       Path: (k) => { return k.endsWith('_PATH') },
@@ -186,6 +182,10 @@ const PandaContext = () => {
         valFn(k)
       })
     })
+    console.log()
+    console.log(title('Private Label:'))
+    valFn('label')
+    valFn('labelInfo')
     if (Object.keys(ctx).length > 0) {
       console.log()
       console.log(title('Other Variables:'))

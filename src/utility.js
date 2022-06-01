@@ -35,6 +35,7 @@ module.exports = {
   slugify (v) { return _.kebabCase(v) }, // becomes-this
   nameify (v) { return _.startCase(v) }, // Becomes This
   camelify (v) { return _.camelCase(v) }, // becomesThis
+  pascalify (v) { return _.upperFirst(_.camelCase(v)) }, // BecomesThis
   snakeify (v) { return _.snakeCase(v) }, // becomes_this
   envify (v) { return _.snakeCase(v).toUpperCase() } // BECOMES_THIS
 }

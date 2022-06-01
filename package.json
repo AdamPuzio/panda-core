@@ -1,7 +1,7 @@
 {
-  "name": "panda-core",
+  "name": "@panda/panda-core",
   "version": "0.0.1",
-  "description": "",
+  "description": "Panda Framework Core",
   "main": "panda-core.js",
   "scripts": {
     "panda-core": "panda-core",
@@ -10,10 +10,10 @@
     "lint-fix": "standard --fix"
   },
   "bin": {
-    "panda-core": "./bin/panda-core.js"
+    "panda-core": "bin/panda-core.js"
   },
   "keywords": [],
-  "author": "",
+  "author": "Adam Puzio <adam@puzio.me>",
   "license": "MIT",
   "dependencies": {
     "cache-base": "^4.0.2",
@@ -30,5 +30,16 @@
   "devDependencies": {
     "jest": "^28.1.0",
     "standard": "^17.0.0"
-  }
+  },
+  "directories": {
+    "test": "tests"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AdamPuzio/panda-core.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AdamPuzio/panda-core/issues"
+  },
+  "homepage": "https://github.com/AdamPuzio/panda-core#readme"
 }

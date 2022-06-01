@@ -88,11 +88,14 @@ class PandaScaffold {
    * @param {Object} options
    * @returns
    */
-  async template (sourceFile, options) {
-    console.log('need updates to scaffold.template()')
+  async template (sourceFile, data, opts={}) {
+    opts = {...{
+      save: false
+    }, ...opts}
     const sourceFileContent = await this.getFile(sourceFile)
-    const opts = await this._templateOptions(options)
-    const content = await this._template(sourceFileContent, { data: opts })
+    data = await this._templateData(data)
+    const content = await this._template(sourceFileContent, { data: data })
+    if (opts.save) await this.setFile(sourceFile, content)
     return content
   }
 

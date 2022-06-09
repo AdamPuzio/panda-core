@@ -1,6 +1,6 @@
 {
   "name": "panda-core",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Panda Framework Core",
   "main": "panda-core.js",
   "scripts": {

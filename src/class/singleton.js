@@ -1,7 +1,7 @@
 'use strict'
 
 const EventEmitter = require('events')
-const PandaLogger = require('../logger')
+const Logger = require('../logger')
 
 class PandaSingleton extends EventEmitter {
   constructor (...args) {
@@ -15,7 +15,7 @@ class PandaSingleton extends EventEmitter {
   }
 
   setLogger () {
-    this.logger = PandaLogger.childLogger(this)
+    this.logger = Logger.getLogger(this.constructor.name)
 
     // create convenience methods for each log level
     Object.keys(this.logger._logger.levels).forEach((level) => { this[level] = (...args) => { return this.logger[level](...args) } })

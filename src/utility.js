@@ -4,6 +4,8 @@ const _ = require('lodash')
 const glob = require('util').promisify(require('glob'))
 const { v4: uuidv4 } = require('uuid')
 const moment = require('moment')
+const clargs = require('command-line-args')
+const chalk = require('chalk')
 
 module.exports = {
   _,
@@ -26,8 +28,13 @@ module.exports = {
   openBrowser (url) {
     require('child_process')
       .exec((process.platform
-        .replace('darwin','')
-        .replace(/win32|linux/,'xdg-') + 'open ' + url))
+        .replace('darwin', '')
+        .replace(/win32|linux/, 'xdg-') + 'open ' + url))
+  },
+
+  parseOptions (def, opts = {}) {
+    opts = { ...{ partial: true, camelCase: true }, opts }
+    return clargs(def, opts)
   },
 
   pick (obj, keys, prune = true) {
@@ -43,7 +50,20 @@ module.exports = {
     }))
   },
 
-  uid: function () { return uuidv4() },
+  promptList (arr) {
+    const names = arr.map(a => a.name)
+    const maxLength = Math.max.apply(Math, names.map(function (el) { return el.length }))
+    const rs = []
+    arr.forEach((i) => {
+      const spacing = maxLength + 5 - i.name.length
+      const spacer = ' '.repeat(spacing > 0 ? spacing : 0)
+      const name = `${i.name}${spacer}${chalk.dim(i.desc) || ''}`
+      rs.push({ name, value: i.value })
+    })
+    return rs
+  },
+
+  uuid: function () { return uuidv4() },
 
   slugify (v) { return _.kebabCase(v) }, // becomes-this
   nameify (v) { return _.startCase(v) }, // Becomes This

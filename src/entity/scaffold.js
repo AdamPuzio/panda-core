@@ -3,6 +3,8 @@
 const Panda = require('../../')
 const Utility = require('../utility')
 const Factory = Panda.Factory
+const Logger = Panda.Logger
+const ctx = require('../context')
 const { exit } = require('process')
 const path = require('path')
 const fs = require('fs-extra')
@@ -12,7 +14,7 @@ const _ = require('lodash')
 
 class PandaScaffold {
   constructor (scaffoldObj) {
-    this.logger = Panda.getLogger()
+    this.logger = Logger.getLogger('Scaffold', { format: 'cli' })
 
     // set the scaffold source and update it when Factory does
     this.scaffoldDir = Factory.scaffoldDir
@@ -72,8 +74,8 @@ class PandaScaffold {
    * @param {Object} opts
    */
   async copy (source, dest, opts = {}) {
-    const sourceFile = path.join(opts.scaffoldDir || this.scaffoldDir, source)
-    const destFile = path.join(opts.projectDir || this.projectDir || process.cwd(), dest)
+    const sourceFile = path.join(ctx.path(opts.scaffoldDir || this.scaffoldDir), source)
+    const destFile = path.join(ctx.path(opts.projectDir || this.projectDir || process.cwd()), dest)
     this.logger.debug(`attempting to copy from ${sourceFile} to ${destFile}`)
 
     await this.confirmNotExists(destFile, `Output location already exists, can't overwrite (${destFile})`)
@@ -88,13 +90,16 @@ class PandaScaffold {
    * @param {Object} options
    * @returns
    */
-  async template (sourceFile, data, opts={}) {
-    opts = {...{
-      save: false
-    }, ...opts}
+  async template (sourceFile, data, opts = {}) {
+    opts = {
+      ...{
+        save: false
+      },
+      ...opts
+    }
     const sourceFileContent = await this.getFile(sourceFile)
     data = await this._templateData(data)
-    const content = await this._template(sourceFileContent, { data: data })
+    const content = await this._template(sourceFileContent, { data })
     if (opts.save) await this.setFile(sourceFile, content)
     return content
   }

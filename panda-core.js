@@ -1,27 +1,37 @@
 'use strict'
 
-let Logger
+const EventEmitter = require('events')
+const PandaLogger = require('./src/logger')
+const ctx = require('./src/context')
 
-class PandaCore {
+const logger = PandaLogger.baseLogger
+
+class PandaCore extends EventEmitter {
   constructor () {
-    this.initialized = true
+    if (PandaCore._instance) return PandaCore._instance
+    super()
+    PandaCore._instance = this
+
+    this.emit('init', this)
   }
+
+  foo = 'bar'
 
   class = {
     Singleton: require('./src/class/singleton')
   }
 
   getLogger () {
-    // let's lazy load it
-    if (!Logger) Logger = require('./src/logger')
-    return Logger
+    return logger
   }
 
-  entity (entity) {
+  entity = function (entity) {
     return require(`./src/entity/${entity}`)
   }
 
-  get ctx () { return require('./src/context') }
+  get ctx () { return ctx }
+
+  get Logger () { return PandaLogger }
 
   get Factory () { return require('./src/factory') }
 

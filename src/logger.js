@@ -1,84 +1,216 @@
 'use strict'
 
 const winston = require('winston')
-const { combine, splat, timestamp, label } = winston.format
+const { combine, splat, timestamp, label, printf } = winston.format
+const EventEmitter = require('events')
 const chalk = require('chalk')
-const prettyjson = require('prettyjson')
-const _ = require('lodash')
-const { exit } = require('process')
+const symbols = require('figures')
+const Utility = require('./utility')
 
-const levelColors = { fatal: 'redBright', error: 'red', warn: 'yellow', info: 'green', verbose: '', debug: '', silly: 'dim', success: 'blue' }
+const levelInfo = {
+  fatal: { lvl: 0, color: 'redBright', symbol: 'cross' },
+  error: { lvl: 1, color: 'red', symbol: 'cross' },
+  warn: { lvl: 2, color: 'yellow', symbol: 'warning' },
+  http: { lvl: 3, color: 'yellow', symbol: 'warning' },
+  info: { lvl: 4, color: 'green', symbol: 'info' },
+  verbose: { lvl: 5, symbol: 'pointerSmall' },
+  debug: { lvl: 6, symbol: 'dot' },
+  silly: { lvl: 7, symbol: 'dot', color: 'dim' },
+  success: { level: 'info', color: 'green', symbol: 'tick' }
+}
+const levels = Object.fromEntries(Object.entries(levelInfo).filter(([k, v]) => { return Number.isInteger(v.lvl) }).map(([k, v]) => { return [k, v.lvl] }))
+const levelColors = Object.fromEntries(Object.entries(levelInfo).map(([k, v]) => { return [k, (v.color || '')] }))
 
-const loggerBank = {}
+const optlib = {}
+optlib.format = {
+  simple: winston.format.simple(),
+  json: winston.format.json(),
+  basic: printf(({ level, message, label, timestamp }) => {
+    return `${timestamp} [${label}] ${level}: ${message}`
+  }),
+  panda: winston.format.printf((info) => {
+    const lvl = info[Symbol.for('level')]
+    let msg = [
+      chalk.dim(info.timestamp),
+      (levelColors[lvl] ? chalk[levelColors[lvl]](lvl.toUpperCase().padEnd(8)) : lvl.toUpperCase().padEnd(8)),
+      chalk.cyan(info.label).padEnd(20),
+      info.message
+    ].join(' ')
+    if (info.metadata) msg += JSON.stringify(info.metadata)
+    return msg
+  }),
+  cli: winston.format.printf((info) => {
+    const lvl = info.subtype || info[Symbol.for('level')]
+    const style = levelInfo[lvl]
+    if (!style.symbol) return info.message
+    let sym = symbols[style.symbol]
+    if (style.color) sym = chalk[style.color](sym)
+    return `${sym} ${info.message}`
+  })
+}
 
-class PandaLoggerBase {
-  setLogger (logger) {
-    this._logger = logger
+class PandaLogger extends EventEmitter {
+  levelInfo = levelInfo
+  levels = levels
+  levelColors = levelColors
 
-    // create convenience methods for each log level
-    Object.keys(this._logger.levels).forEach((level) => { if (!this[level]) this[level] = (...args) => { return this._logger[level](...args) } })
+  constructor () {
+    if (PandaLogger._instance) return PandaLogger._instance
+    super()
+    PandaLogger._instance = this
+
+    this._createBaseLogger()
   }
 
-  _isBaseLogger = false
-  configKeys = ['level', 'levels', 'format', 'transports']
+  _cache = {}
+  _format = ''
 
-  configure (opts) {
-    if (!this._isBaseLogger) return baseLogger.configure(opts)
-    const rawOpts = opts
-    // const diff = _.pick(this._logger, Object.keys(opts))
-    const updates = Object.keys(opts)
-    const currentLevel = this._logger.level
-    opts = { ..._.pick(this._logger, this.configKeys), ...opts }
-    this._logger.configure(opts)
-    this.silly(`configuring logger options: ${updates.join(', ')}`)
-    if (rawOpts.level !== currentLevel) this._logger.silly(`updating log level from --${currentLevel}-- to --${rawOpts.level}--`)
+  getLogger (name, opts = {}) {
+    if (!name) name = '--base--'
+    if (this._cache[name]) return this._cache[name]
+    const cache = this._cache[name] = new PandaLoggerInstance(name, opts)
+    cache.Logger = this
+    this.on('format:update', (format) => {
+      cache._build({ format })
+    })
+    if (opts.format && opts.format !== this._format) this.setFormat(opts.format)
+    return cache
   }
 
-  /* configure (opts) {
-    if (!this._isBaseLogger) return baseLogger.configure(opts)
-    const rawOpts = opts
-    const diff = _.pick(this._logger, Object.keys(opts))
-
-    opts = {...{
-      transports: this._logger.transports
-    }, ...opts}
-    const doc = require('./etc/doc')
-    //console.log(this._logger.transports)
-
-    console.log(this._isBaseLogger)
-    console.log(this._logger.level)
-    this._logger.configure(opts)
-    console.log(this._logger.level)
-    this._logger.info(`logger.configure()`)
-    //console.log(Object.keys(diff))
-    const updates = Object.keys(diff).join(', ')
-    this._logger.debug(`  updates: ${updates}`)
-    //this._logger.info(JSON.stringify({ from: diff, to: opts}))
-    if (!this._isBaseLogger) baseLogger.configure(rawOpts)
-  } */
-
-  log (...args) { return this._logger.log(...args) }
-  success (msg) { return this._logger.log('info', chalk.blue(msg)) }
-  trace (...args) {
-    this._logger.silly(...args)
-    if (this.test('silly')) console.trace()
+  setFormat (format) {
+    this._format = format
+    this.emit('format:update', format)
   }
 
-  out (level, msg, styles) { if (this.test(level)) console.log(this.style(styles)(msg)) }
-  exitError (err, msg) {
-    if (msg) this.error(msg)
+  _createBaseLogger () {
+    if (this._cache['--base--']) return this._cache['--base--']
 
-    if (this.test('debug')) console.log(err)
-    else this.error(err)
-    exit()
+    const cache = this._cache['--base--'] = new PandaLoggerInstance('Panda')
+    this.baseLogger = cache
+    return cache
+  }
+
+  debug (msg) {
+    this.baseLogger.debug(msg)
+  }
+}
+
+class PandaLoggerInstance {
+  levelInfo = levelInfo
+  levels = levels
+  levelColors = levelColors
+
+  constructor (name, opts = {}) {
+    this.name = name
+    this._build(opts)
+
+    this._generateLoggerFns()
+    // this.testLevels()
+    /* this.Logger.on('format:update', (format) => {
+      this._format = format
+      this._logger = winston.createLogger(this.generateConfig(name, opts))
+    }) */
+  }
+
+  _build (opts = {}) {
+    const cfg = this.generateConfig(this.name, opts)
+    this._logger = winston.createLogger(cfg)
+    return this._logger
+  }
+
+  generateConfig (name, opts = {}) {
+    this._rawConfig = opts
+    opts = this._generateConfig(opts)
+    this.level = opts.level
+    this.format = opts.format
+    // let format = process.env.LOG_FORMAT || opts.format || this.format
+    const _format = this.__format = opts.format
+    if (typeof this.format === 'string') this.format = optlib.format[this.format]
+    const cfg = {
+      level: opts.level,
+      levels,
+      _format,
+      format: combine(
+        label({ label: name, message: false }),
+        splat(),
+        timestamp(),
+        this.format
+      ),
+      transports: opts.transports || [
+        new winston.transports.Console()
+      ]
+    }
+    this._config = cfg
+    return cfg
+  }
+
+  _generateConfig (cfg = {}) {
+    // have to separately check global flags
+    const options = Utility.parseOptions([
+      { name: 'debug', alias: 'd', defaultValue: false },
+      { name: 'log-level', type: String },
+      { name: 'log-format', type: String },
+      { name: 'no-fun', type: Boolean, defaultValue: false }
+    ])
+
+    cfg.level = process.env.LOG_LEVEL || options.logLevel || (options.debug ? 'debug' : false) || cfg.level || this._level
+    cfg.format = process.env.LOG_FORMAT || options.logFormat || cfg.format || this._format
+
+    return cfg
+  }
+
+  getConfig () { return this._config }
+
+  _level = 'info'
+  _format = 'panda'
+
+  get level () {
+    return this._level
+  }
+
+  set level (lvl) {
+    this._level = lvl
+    // ToDo: set the logger and fire event
+  }
+
+  get format () {
+    return this._format
+  }
+
+  set format (format) {
+    this._format = format
+    // ToDo: set the logger and fire event
+  }
+
+  _generateLoggerFns () {
+    Object.entries(levelInfo).forEach(([k, v]) => {
+      this[k] = function (msg) {
+        this._logger.log({
+          level: v.level || k,
+          message: msg,
+          subtype: k
+        })
+      }
+    })
   }
 
   test (level, levelAt) {
     if (level === true) return true
-    const levels = this._logger.levels
-    if (!levelAt) levelAt = this._logger.level
+    if (!levelAt) levelAt = this.level
     const levelsArray = Object.keys(levels)
     return levelsArray.indexOf(level) <= levelsArray.indexOf(levelAt)
+  }
+
+  log (...args) { return this._logger.log(...args) }
+  out (msg, opts = {}) {
+    opts = {
+      ...{
+        level: true,
+        styles: null
+      },
+      ...opts
+    }
+    if (this.test(opts.level)) console.log(this.style(opts.styles)(msg))
   }
 
   style (styles) {
@@ -92,110 +224,13 @@ class PandaLoggerBase {
     return call
   }
 
-  table (val) {
-    const prettyjsonCfg = {}
-    if (new Date().getMonth() === 5 && this._settings.fun === true) prettyjsonCfg.keysColor = 'rainbow'
-    return prettyjson.render(val, prettyjsonCfg)
-  }
-
-  tableOut (val, level) {
-    if (level && !this.test(level)) return
-    const table = this.table(val)
-    return console.log(table)
+  testLevels () {
+    Object.entries(this._logger.levels).forEach(([k, v]) => {
+      this._logger[k](k)
+    })
+    this.success('Success')
   }
 }
 
-let baseLogger
-
-class PandaLogger extends PandaLoggerBase {
-  constructor (scope, opts = {}) {
-    super()
-    opts = {
-      ...{
-        name: 'PandaCore',
-        level: 'info'
-      },
-      ...opts
-    }
-
-    // create new winston logger
-    const cfg = this.generateConfig(opts)
-    const logger = winston.createLogger(cfg)
-    /* const logger = winston.createLogger({
-      level: process.env.LOG_LEVEL || opts.level,
-      format: combine(
-        label({ label: opts.name, message: false }),
-        splat(),
-        timestamp(),
-        winston.format.printf((info) => {
-          const lvl = info[Symbol.for('level')]
-          return (levelColors[lvl] ? chalk[levelColors[lvl]](info.message) : info.message)
-        })
-      ),
-      transports: [
-        new winston.transports.Console()
-      ],
-      _isBaseLogger: true
-    }) */
-    baseLogger = this
-    this._isBaseLogger = true
-    this.setLogger(logger)
-
-    // create convenience methods for each log level
-    // Object.keys(this._logger.levels).forEach((level) => { if (!this[level]) this[level] = (...args) => { return this._logger[level](...args)}})
-  }
-
-  generateConfig (cfg = {}) {
-    cfg = { ...{}, ...cfg }
-    const logCfg = {
-      level: process.env.LOG_LEVEL || cfg.level,
-      format: combine(
-        label({ label: cfg.name, message: false }),
-        splat(),
-        timestamp(),
-        winston.format.printf((info) => {
-          const lvl = info[Symbol.for('level')]
-          return (levelColors[lvl] ? chalk[levelColors[lvl]](info.message) : info.message)
-        })
-      ),
-      transports: [
-        new winston.transports.Console()
-      ],
-      _isBaseLogger: true
-    }
-    this._logCfg = logCfg
-    return logCfg
-  }
-
-  getConfig () {
-    return this._logCfg
-  }
-
-  childLogger (ns, cfg = {}) {
-    if (typeof ns === 'object') ns = ns.constructor.name
-    if (loggerBank[ns]) return loggerBank[ns]
-    cfg.name = ns
-    const childLogger = new PandaLoggerBase()
-    const cl = this._logger.child(cfg)
-    childLogger.setLogger(cl)
-    loggerBank[ns] = childLogger
-    return childLogger
-  }
-
-  /* log (...args) { return this._logger.log(...args) }
-  success (msg) { return this._logger.log('info', chalk.blue(msg)) }
-  trace (...args) {
-    this._logger.silly(...args)
-    if (this.test('silly')) console.trace()
-  }
-  out (level, msg, styles) { if (this.test(level)) console.log(this.style(styles)(msg)) }
-
-  test (level, levelAt) {
-    const levels = this._settings.levels
-    if (!levelAt) levelAt = this.level
-    const levelsArray = Object.keys(levels)
-    return levelsArray.indexOf(level) <= levelsArray.indexOf(levelAt)
-  } */
-}
-
-module.exports = new PandaLogger()
+const Logger = new PandaLogger()
+module.exports = Logger

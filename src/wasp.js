@@ -2,56 +2,55 @@
 
 const PandaCore = require('../')
 const PandaSingleton = require('./class/singleton')
-const PandaLogger = require('./logger')
-const Commander = require('commander')
-const { Command } = Commander
-const path = require('path')
-const inquirer = require('inquirer')
-const chalk = require('chalk')
+const Logger = require('./logger')
+const { Option } = require('commander')
+const PandaCommand = require('./entity/command')
+const PandaScaffoldCommand = require('./entity/scaffold-command')
+const PandaRunCommand = require('./entity/run-command')
 const _ = require('lodash')
-const { exit } = require('process')
+const inquirer = require('inquirer')
+const ora = require('ora')
+const chalk = require('chalk')
+const prettyjson = require('prettyjson')
 let Factory
 
+/**
+ * Wasp
+ */
 class Wasp extends PandaSingleton {
+  spinner = ora
+  color = chalk
+
+  /**
+   * Wasp constructor
+   *
+   * @returns
+   */
   constructor () {
     if (Wasp._instance) return Wasp._instance
     super()
     Wasp._instance = this
 
     // let's set up some convenience classes/methods
-    this.Commander = Commander
+    PandaCommand.prototype.Wasp = this
     this.Command = PandaCommand
-    this.Option = Commander.Option
+    this.ScaffoldCommand = PandaScaffoldCommand
+    this.RunCommand = PandaRunCommand
+    this.Option = Option
 
-    this.logger = PandaLogger.childLogger(this)
+    this.logger = Logger.getLogger('Wasp')
 
-    this.debug('PandaCore.Wasp initialized')
+    this._generateLoggerFns()
+    this._generateConfirmFns()
   }
 
-  chalk = chalk
+  get opts () {
+    return this.cmd.opts()
+  }
 
-  /**
-   * Parse a given command for info
-   *
-   * @param {*} cmd
-   * @returns
-   */
-  async parse (cmd) {
-    const options = {
-      ...{
-        debug: false,
-        fun: true,
-        privateLabel: 'panda'
-      },
-      ...cmd.opts()
-    }
-
-    this.cmd = cmd
-    // if the --debug flag is set, set the logger level
-    if (options.debug !== false) this.logger.configure({ level: options.debug === true ? 'debug' : options.debug })
-    this.logger.tableOut({ options, rawOptions: cmd.opts() }, 'silly')
-
-    this._parsedOpts = options
+  parse () {
+    const options = this.cmd.opts()
+    this.tableOut({ options, rawOptions: options }, 'silly')
     return options
   }
 
@@ -63,7 +62,7 @@ class Wasp extends PandaSingleton {
    * @param {Object} opts additional options
    * @returns
    */
-  async parseScaffold (cmd, scaffold, opts = {}) {
+  async parseScaffold (scaffold, opts = {}) {
     if (!Factory) Factory = require('./factory')
     opts = {
       ...{
@@ -72,7 +71,7 @@ class Wasp extends PandaSingleton {
       },
       ...opts
     }
-    const options = await this.parse(cmd)
+    const options = await this.parse()
 
     const scaff = await Factory.getScaffold(scaffold)
 
@@ -84,10 +83,11 @@ class Wasp extends PandaSingleton {
 
     // interactive prompt using the entity specific question list
     if (opts.interactiveMode) options.data = await this.inquire(scaffold, options)
+    this.spacer()
 
     // build based off of the responses
-    // return await scaff.build(scaffold, options)
-    return await scaff.build(options.data, options)
+    await scaff.build(options.data, options)
+    this.spacer()
   }
 
   /**
@@ -103,27 +103,18 @@ class Wasp extends PandaSingleton {
     // check for the --scaffold-list flag
     if (options.scaffoldList === true) {
       const scaffoldInfo = await Factory.getScaffoldList(entity)
-      this.logger.out('info', 'Scaffold List: ', 'bold')
+      this.logger.out('Scaffold List: ', { level: 'info', styles: 'bold' })
       if (scaffoldInfo.data && Array.isArray(scaffoldInfo.data.scaffolds)) {
         scaffoldInfo.data.scaffolds.forEach((scaffold) => {
-          this.logger.out('info', ` ${this.logger.style('magenta')(scaffold.name)}: ${scaffold.value}`)
+          this.info(` ${this.logger.style('magenta')(scaffold.name)}: ${scaffold.value}`)
         })
       } else { this.logger.warn('No available scaffolds to report') }
-      exit()
+      process.exit()
     }
 
     // check for the --scaffold-source flag and update the source
     if (options.scaffoldSource) {
-      let src = options.scaffoldSource
-      switch (src) {
-        case 'panda':
-          src = path.join(ctx.PANDA_PATH, 'scaffold')
-          break
-        case 'panda-dev':
-          src = path.join(ctx.PANDA_DEV_PATH, 'scaffold')
-          break
-      }
-      Factory.setScaffoldSource(src)
+      Factory.setScaffoldSource(options.scaffoldSource, options.scaffoldDir)
     }
   }
 
@@ -143,56 +134,103 @@ class Wasp extends PandaSingleton {
     return data
   }
 
-  /* async locationTest (locRef, opts={}) {
-    opts = {...{
-      onFail: 'exit'
-    }, ...opts}
+  setLogger (logger) {
+    this.logger = logger
+  }
 
-    if (!Array.isArray(locRef)) locRef = [locRef]
-    locRef.forEach((ref) => {
-      const falsy = ref.startsWith('not')
-      const varMatch = falsy ? ref.slice(3, 4).toLowerCase() + ref.slice(4) : ref
-      const test = ctx[varMatch] === (falsy ? false : true)
-      if (!test) {
-        const err = `You ${falsy ? 'cannot' : 'need to'} be in a ${varMatch.slice(2)} directory when performing this action`
-        switch (opts.onFail) {
-          case 'exit':
-            console.log(chalk.red(err))
-            exit()
-            break;
-          case 'throw':
-            throw new Error(err)
-            break;
-          case 'return':
-            return false
-            break;
-        }
+  _generateLoggerFns () {
+    Object.entries(Logger.levelInfo).forEach(([k, v]) => {
+      this[k] = function (msg) {
+        const logFn = this.logger || console
+        logFn.log({
+          level: v.level || k,
+          message: msg,
+          subtype: k
+        })
       }
     })
-    return true
-  } */
+  }
+
+  _generateConfirmFns () {
+    const fns = PandaCore.ctx.fns
+    fns.forEach((k) => {
+      // this[k] = (opts={}) => { PandaCore.ctx[k]({...{onFail: 'exit'}, ...opts}) }
+      this[k] = (opts = {}) => {
+        opts = { ...{ onFail: 'throw' }, ...opts }
+        PandaCore.ctx[k](opts)
+          .catch((err) => {
+            this.exitError(err, err.toString())
+          })
+      }
+    })
+  }
 
   async locationTest (locRef, opts = {}) {
-    opts = {...{ onFail: 'exit' }, ...opts}
-    return await PandaCore.ctx.locationTest(locRef, opts)
+    opts = { ...{ onFail: 'throw' }, ...opts }
+    await PandaCore.ctx.locationTest(locRef, opts)
+      .catch((err) => {
+        this.exitError(err, err.toString())
+      })
   }
 
-  async confirmInProject (opts) { return await this.locationTest('inProject', opts) }
-  async confirmNotInProject (opts) { return await this.locationTest('notInProject', opts) }
-  async confirmInPanda (opts) { return await this.locationTest('inPanda', opts) }
-  async confirmNotInPanda (opts) { return await this.locationTest('notInPanda', opts) }
-  async confirmInPandaDev (opts) { return await this.locationTest('inPandaDev', opts) }
-  async confirmNotInPandaDev (opts) { return await this.locationTest('notInPandaDev', opts) }
-}
-
-class PandaCommand extends Command {
-  constructor (name, customArg) {
-    super(name)
-    this.logger = PandaLogger
+  spacer () { console.log() }
+  clear () { process.stdout.write(process.platform === 'win32' ? '\x1B[2J\x1B[0f' : '\x1B[2J\x1B[3J\x1B[H') }
+  out (msg, opts = {}) {
+    opts = {
+      ...{
+        level: true,
+        styles: null
+      },
+      ...opts
+    }
+    if (this.test(opts.level)) console.log(this.style(opts.styles)(msg))
   }
 
-  exit () {
-    exit()
+  exitError (err, msg) {
+    if (msg) this.error(msg)
+
+    if (this.test('debug')) console.log(err)
+    else if (!msg) this.error(err)
+    process.exit()
+  }
+
+  test (level, levelAt) { return this.logger.test(...arguments) }
+
+  style (styles) {
+    let call = chalk
+    if (styles) {
+      if (typeof styles === 'string') styles = styles.split('.')
+      styles.forEach((style) => {
+        if (chalk[style]) call = call[style]
+      })
+    }
+    return call
+  }
+
+  table (val) {
+    const prettyjsonCfg = {}
+    if (new Date().getMonth() === 5 && this.cmd.opts().fun === true) prettyjsonCfg.keysColor = 'rainbow'
+    return prettyjson.render(val, prettyjsonCfg)
+  }
+
+  tableOut (val, level) {
+    if (level && !this.test(level)) return
+    const table = this.table(val)
+    return console.log(table)
+  }
+
+  heading (msg, opts = {}) {
+    opts = {
+      ...{
+        level: 'info',
+        styles: 'bold',
+        subhead: false
+      },
+      ...opts
+    }
+    msg = this.style(opts.styles)(msg)
+    if (opts.subhead) msg += `\n${opts.subhead}`
+    this.out(`\n${msg}\n`, { level: opts.level })
   }
 }
 

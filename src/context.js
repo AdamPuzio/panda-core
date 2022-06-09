@@ -91,8 +91,15 @@ const PandaContext = () => {
         break
       default:
         if (packageJson.panda) {
-          // we're likely in a package
-          ctx.inPackage = true
+          if (packageJson.panda.privateLabel === true) {
+            // we're in a private label
+            ctx.inPrivateLabel = true
+            ctx.context = 'inPrivateLabel'
+          } else {
+            // we're likely in a package
+            ctx.inPackage = true
+            ctx.context = 'inPackage'
+          }
         }
     }
   }
@@ -110,6 +117,11 @@ const PandaContext = () => {
       fns[`confirmNot${u}`] = async (opts) => { return await locationTest(`not${u}`, opts) }
     }
   })
+
+  function pathFn (p, context) {
+    p = p.includes('${') ? p : p.replace('{', '${ctx.')
+    return eval('`' + p + '`') // eslint-disable-line
+  }
 
   function registerPrimaryLib (lib, libPath) {
     const packageJson = registerLib(lib, libPath)
@@ -213,17 +225,20 @@ const PandaContext = () => {
   async function locationTest (locRef, opts = {}) {
     opts = {
       ...{
-        onFail: 'return'
+        onFail: 'return',
+        operator: 'AND'
       },
       ...opts
     }
+    let success = false
 
     if (!Array.isArray(locRef)) locRef = [locRef]
     locRef.forEach((ref) => {
       const falsy = ref.startsWith('not')
       const varMatch = falsy ? ref.slice(3, 4).toLowerCase() + ref.slice(4) : ref
       const test = ctx[varMatch] === (!falsy)
-      if (!test) {
+      if (!test && opts.operator === 'AND') {
+        // in an AND condition, one failure means total failure
         const err = `You ${falsy ? 'cannot' : 'need to'} be in a ${varMatch.slice(2)} directory when performing this action`
         switch (opts.onFail) {
           case 'exit':
@@ -233,11 +248,32 @@ const PandaContext = () => {
           case 'throw':
             throw new Error(err)
           case 'return':
-            return false
+            return err
         }
+      } else if (test && opts.operator === 'OR') {
+        // in an OR condition, one success means total success
+        success = true
       }
     })
+    if (opts.operator === 'OR' && success === false) {
+      // since we got here without a success, assume we failed
+      const err = 'You did not meet any of the required conditions regarding location'
+      switch (opts.onFail) {
+        case 'exit':
+          console.log('\x1b[31m%s\x1b[0m', err)
+          process.exit()
+          break
+        case 'throw':
+          throw new Error(err)
+        case 'return':
+          return err
+      }
+    }
     return true
+  }
+
+  function raw () {
+    return ctx
   }
 
   function getProjectDetails () {
@@ -258,6 +294,9 @@ const PandaContext = () => {
     ...ctx,
     ...fns,
     ...{
+      raw,
+      fns: Object.keys(fns),
+      path: pathFn,
       locationTest,
       outputPretty,
       getProjectDetails,

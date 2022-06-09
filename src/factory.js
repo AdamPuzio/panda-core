@@ -1,8 +1,7 @@
 'use strict'
 
-const PandaCore = require('../')
 const PandaSingleton = require('./class/singleton')
-const ctx = PandaCore.ctx
+const ctx = require('./context')
 const path = require('path')
 const fs = require('fs-extra')
 const CacheBase = require('cache-base')
@@ -29,14 +28,17 @@ class PandaFactory extends PandaSingleton {
     scaffolds: '*/*.scaffold.js'
   }
 
-  setScaffoldSource (src) {
-    this.scaffoldDir = src
-    this.emit('update-scaffold-source', src)
+  setScaffoldSource (src, dir = '') {
+    this.debug(`Factory.setScaffoldSource(${src})`)
+    this.scaffoldDir = ctx.path(path.join(src, dir))
+    this.emit('update-scaffold-source', this.scaffoldDir)
   }
 
   setProjectDir (dir) {
-    this.ProjectDir = dir
-    this.emit('update-project-directory', dir)
+    this.debug(`Factory.setProjectDir(${dir})`)
+    if (!dir) throw new Error(`Factory.setProjectDir() Error: invalid dir variable - ${dir}`)
+    this.projectDir = ctx.path(dir)
+    this.emit('update-project-directory', this.projectDir)
   }
 
   async getScaffoldList (entity, opts = {}) {
@@ -66,7 +68,13 @@ class PandaFactory extends PandaSingleton {
       // const vfile = new Vinyl({ path: file })
       const entity = path.dirname(file).split(path.sep).pop()
       const scaffold = file.split(path.sep).pop().replace('.scaffold.js', '')
-      const content = require(file)
+      let content
+      try {
+        content = require(file)
+      } catch (err) {
+        console.log(err)
+        throw new Error(`Scaffolding file cannot be loaded: ${file}`, err)
+      }
       if (!entityList[entity]) entityList[entity] = {}
       entityList[entity][scaffold] = {
         entity, scaffold, path: file, scaffoldDir: dir, content
@@ -97,6 +105,8 @@ class PandaFactory extends PandaSingleton {
 
     const entityList = await this.getScaffoldList(entity, opts)
 
+    // console.log({scaffold, entityList, opts})
+
     // const file = path.join(opts.scaffoldDir, scaffold + '.scaffold.js')
     // const content = require(file)
     if (!entityList || !entityList[scaff]) throw new Error(`No matching Scaffold found: ${scaffold}`)
@@ -126,24 +136,27 @@ class PandaFactory extends PandaSingleton {
 
     const base = await this.generateBasePackage()
     const pkgPath = path.join(projectDir, 'package.json')
-    const pkg = {...{
-      name: data.slug,
-      version: '1.0.0',
-      description: '',
-      main: 'index.js',
-      scripts: {
-        start: 'npx panda start'
+    const pkg = {
+      ...{
+        name: data.slug,
+        version: '1.0.0',
+        description: '',
+        main: 'index.js',
+        scripts: {
+          start: 'npx panda start'
+        },
+        panda: pandaCfg,
+        keywords: [],
+        author: '',
+        license: '',
+        dependencies: {},
+        devDependencies: {},
+        engines: {
+          node: '>= 14.0.0'
+        }
       },
-      panda: pandaCfg,
-      keywords: [],
-      author: '',
-      license: '',
-      dependencies: {},
-      devDependencies: {},
-      engines: {
-        node: '>= 14.0.0'
-      }
-    }, ...base}
+      ...base
+    }
 
     if (data.testTool) pkg.scripts.test = data.testTool
     if (data.lintTool) pkg.scripts.lint = data.lintTool
